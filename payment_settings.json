@@ -1,0 +1,25 @@
+{
+    "payment_methods": [
+        {
+            "name": "Telegram Stars",
+            "type": "telegram_stars",
+            "provider_token": "YOUR_PROVIDER_TOKEN",
+            "is_default": true
+        },
+        {
+            "name": "CryptoBot (USDT)",
+            "type": "cryptobot",
+            "api_token": "YOUR_CRYPTOBOT_TOKEN",
+            "currency": "USDT",
+            "is_default": false
+        },
+        {
+            "name": "ЮKassa",
+            "type": "yookassa",
+            "shop_id": "YOUR_SHOP_ID",
+            "secret_key": "YOUR_SECRET_KEY",
+            "is_default": false
+        }
+    ],
+    "default_method": "Telegram Stars"
+}
