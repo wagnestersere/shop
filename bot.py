@@ -2946,6 +2946,507 @@ async def main():
     logger.info(f"Версия: 1.0.0")
     logger.info(f"Первый администратор ID: {FIRST_ADMIN_ID}")
     logger.info("=" * 50)
+
+# ==================== УПРАВЛЕНИЕ ПЛАТЕЖАМИ ====================
+@dp.callback_query(F.data == "admin_payment_settings")
+async def admin_payment_settings(callback: CallbackQuery):
+    """Настройки платежей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    payment_settings = load_payment_settings()
+    payment_methods = payment_settings.get("payment_methods", [])
+    
+    text = "💳 **Настройки платежей**\n\n"
+    
+    if payment_methods:
+        text += "**Способы оплаты:**\n"
+        for i, method in enumerate(payment_methods, 1):
+            default = "⭐ " if method.get("is_default") else ""
+            text += f"{i}. {default}{method['name']}\n"
+            text += f"   📝 {method['details'][:50]}...\n\n"
+    else:
+        text += "Способы оплаты не настроены\n\n"
+    
+    text += f"**По умолчанию:** {payment_settings.get('default_method', 'Не установлен')}"
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="➕ Добавить способ", callback_data="payment_add"))
+    
+    if payment_methods:
+        keyboard.add(InlineKeyboardButton(text="✏️ Редактировать", callback_data="payment_edit_list"))
+        keyboard.add(InlineKeyboardButton(text="⭐ Установить по умолчанию", callback_data="payment_set_default"))
+        keyboard.add(InlineKeyboardButton(text="🗑 Удалить способ", callback_data="payment_delete_list"))
+    
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_add")
+async def payment_add_start(callback: CallbackQuery, state: FSMContext):
+    """Добавление способа оплаты"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "💳 **Добавление способа оплаты**\n\n"
+        "Введите **название** способа оплаты (например: Банковская карта, ЮMoney и т.д.):"
+    )
+    await state.set_state(AdminStates.waiting_for_payment_method_name)
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_edit_list")
+async def payment_edit_list(callback: CallbackQuery, state: FSMContext):
+    """Список для редактирования"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    payment_settings = load_payment_settings()
+    payment_methods = payment_settings.get("payment_methods", [])
+    
+    if not payment_methods:
+        await callback.answer("Нет способов оплаты!", show_alert=True)
+        return
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    for method in payment_methods:
+        keyboard.add(InlineKeyboardButton(
+            text=f"✏️ {method['name']}",
+            callback_data=f"payment_edit_{method['name']}"
+        ))
+    
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_payment_settings"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(
+        "Выберите способ оплаты для редактирования:",
+        reply_markup=keyboard.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("payment_edit_"))
+async def payment_edit_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    method_name = callback.data.replace("payment_edit_", "")
+    await state.update_data(edit_method_name=method_name)
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="📝 Изменить название", callback_data="payment_edit_name"))
+    keyboard.add(InlineKeyboardButton(text="💰 Изменить реквизиты", callback_data="payment_edit_details"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="payment_edit_list"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(
+        f"Редактирование: **{method_name}**\n\n"
+        f"Что хотите изменить?",
+        reply_markup=keyboard.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_edit_name")
+async def payment_edit_name(callback: CallbackQuery, state: FSMContext):
+    """Редактирование названия"""
+    await callback.message.edit_text("Введите новое название:")
+    await state.set_state(AdminStates.waiting_for_payment_method_name)
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_edit_details")
+async def payment_edit_details(callback: CallbackQuery, state: FSMContext):
+    """Редактирование реквизитов"""
+    await callback.message.edit_text("Введите новые реквизиты:")
+    await state.set_state(AdminStates.waiting_for_payment_method_details)
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_set_default")
+async def payment_set_default(callback: CallbackQuery):
+    """Установка способа по умолчанию"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    payment_settings = load_payment_settings()
+    payment_methods = payment_settings.get("payment_methods", [])
+    
+    if not payment_methods:
+        await callback.answer("Нет способов оплаты!", show_alert=True)
+        return
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    for method in payment_methods:
+        default = "⭐ " if method.get("is_default") else ""
+        keyboard.add(InlineKeyboardButton(
+            text=f"{default}{method['name']}",
+            callback_data=f"set_default_{method['name']}"
+        ))
+    
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_payment_settings"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(
+        "Выберите способ оплаты по умолчанию:",
+        reply_markup=keyboard.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("set_default_"))
+async def payment_set_default_process(callback: CallbackQuery):
+    """Сохранение способа по умолчанию"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    method_name = callback.data.replace("set_default_", "")
+    
+    payment_settings = load_payment_settings()
+    
+    # Сбрасываем флаг у всех
+    for method in payment_settings["payment_methods"]:
+        method["is_default"] = False
+    
+    # Устанавливаем новый
+    for method in payment_settings["payment_methods"]:
+        if method["name"] == method_name:
+            method["is_default"] = True
+            payment_settings["default_method"] = method_name
+            break
+    
+    save_payment_settings(payment_settings)
+    
+    await callback.message.edit_text(
+        f"✅ Способ оплаты '{method_name}' установлен по умолчанию!"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "payment_delete_list")
+async def payment_delete_list(callback: CallbackQuery):
+    """Список для удаления"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    payment_settings = load_payment_settings()
+    payment_methods = payment_settings.get("payment_methods", [])
+    
+    if not payment_methods:
+        await callback.answer("Нет способов оплаты!", show_alert=True)
+        return
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    for method in payment_methods:
+        keyboard.add(InlineKeyboardButton(
+            text=f"🗑 {method['name']}",
+            callback_data=f"delete_payment_{method['name']}"
+        ))
+    
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_payment_settings"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(
+        "Выберите способ оплаты для удаления:",
+        reply_markup=keyboard.as_markup()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("delete_payment_"))
+async def payment_delete_process(callback: CallbackQuery):
+    """Удаление способа оплаты"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    method_name = callback.data.replace("delete_payment_", "")
+    
+    payment_settings = load_payment_settings()
+    
+    # Удаляем способ
+    payment_settings["payment_methods"] = [
+        m for m in payment_settings["payment_methods"] if m["name"] != method_name
+    ]
+    
+    # Если удалили способ по умолчанию
+    if payment_settings.get("default_method") == method_name:
+        if payment_settings["payment_methods"]:
+            # Делаем первый способ по умолчанию
+            payment_settings["payment_methods"][0]["is_default"] = True
+            payment_settings["default_method"] = payment_settings["payment_methods"][0]["name"]
+        else:
+            payment_settings["default_method"] = None
+    
+    save_payment_settings(payment_settings)
+    
+    await callback.message.edit_text(
+        f"✅ Способ оплаты '{method_name}' удален!"
+    )
+    await callback.answer()
+
+@dp.message(AdminStates.waiting_for_payment_method_name)
+async def payment_add_name(message: Message, state: FSMContext):
+    """Сохранение названия способа оплаты"""
+    if not is_admin(message.from_user.id):
+        await message.answer("Нет доступа!")
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    edit_mode = "edit_method_name" in data
+    
+    if edit_mode:
+        # Режим редактирования
+        old_name = data.get("edit_method_name")
+        new_name = message.text.strip()
+        
+        payment_settings = load_payment_settings()
+        
+        for method in payment_settings["payment_methods"]:
+            if method["name"] == old_name:
+                method["name"] = new_name
+                if payment_settings.get("default_method") == old_name:
+                    payment_settings["default_method"] = new_name
+                break
+        
+        save_payment_settings(payment_settings)
+        
+        await message.answer(f"✅ Название изменено на '{new_name}'")
+        await state.clear()
+    else:
+        # Режим добавления
+        await state.update_data(payment_name=message.text.strip())
+        await message.answer(
+            "📝 Введите **реквизиты** для оплаты:\n"
+            "Например: номер карты, кошелек и т.д."
+        )
+        await state.set_state(AdminStates.waiting_for_payment_method_details)
+
+@dp.message(AdminStates.waiting_for_payment_method_details)
+async def payment_add_details(message: Message, state: FSMContext):
+    """Сохранение реквизитов и добавление способа оплаты"""
+    if not is_admin(message.from_user.id):
+        await message.answer("Нет доступа!")
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    
+    if "edit_method_name" in data:
+        # Режим редактирования реквизитов
+        method_name = data.get("edit_method_name")
+        new_details = message.text.strip()
+        
+        payment_settings = load_payment_settings()
+        
+        for method in payment_settings["payment_methods"]:
+            if method["name"] == method_name:
+                method["details"] = new_details
+                break
+        
+        save_payment_settings(payment_settings)
+        
+        await message.answer(f"✅ Реквизиты обновлены!")
+        await state.clear()
+    else:
+        # Режим добавления нового способа
+        payment_name = data.get("payment_name")
+        payment_details = message.text.strip()
+        
+        payment_settings = load_payment_settings()
+        
+        if "payment_methods" not in payment_settings:
+            payment_settings["payment_methods"] = []
+        
+        # Проверяем, есть ли уже такой способ
+        for method in payment_settings["payment_methods"]:
+            if method["name"].lower() == payment_name.lower():
+                await message.answer("❌ Способ оплаты с таким названием уже существует!")
+                await state.clear()
+                return
+        
+        # Если это первый способ, делаем его по умолчанию
+        is_default = len(payment_settings["payment_methods"]) == 0
+        
+        new_method = {
+            "name": payment_name,
+            "details": payment_details,
+            "is_default": is_default
+        }
+        
+        payment_settings["payment_methods"].append(new_method)
+        
+        if is_default:
+            payment_settings["default_method"] = payment_name
+        
+        save_payment_settings(payment_settings)
+        
+        await message.answer(
+            f"✅ **Способ оплаты добавлен!**\n\n"
+            f"Название: {payment_name}\n"
+            f"Реквизиты: {payment_details}\n"
+            f"{'⭐ Установлен по умолчанию' if is_default else ''}"
+        )
+        await state.clear()
+    
+    # Возвращаемся к настройкам
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="🔙 Вернуться к настройкам", callback_data="admin_payment_settings"))
+    await message.answer("Выберите действие:", reply_markup=keyboard.as_markup())
+
+# ==================== УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ====================
+@dp.callback_query(F.data == "admin_users")
+async def admin_users(callback: CallbackQuery):
+    """Управление пользователями"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    users_data = load_users()
+    users = users_data.get("users", [])
+    
+    text = "👥 **Управление пользователями**\n\n"
+    text += f"Всего пользователей: {len(users)}\n\n"
+    
+    # Последние зарегистрированные
+    if users:
+        text += "**Последние регистрации:**\n"
+        for user in sorted(users, key=lambda x: x["registered_at"], reverse=True)[:5]:
+            reg_date = datetime.fromisoformat(user["registered_at"]).strftime("%d.%m.%Y")
+            name = user.get("first_name", "Без имени")
+            username = f"(@{user['username']})" if user.get('username') else ""
+            text += f"• {name} {username} - {reg_date}\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="📋 Список пользователей", callback_data="admin_users_list"))
+    keyboard.add(InlineKeyboardButton(text="📊 Активность", callback_data="admin_users_activity"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_users_list")
+async def admin_users_list(callback: CallbackQuery):
+    """Список пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    users_data = load_users()
+    users = users_data.get("users", [])
+    
+    if not users:
+        await callback.message.edit_text(
+            "Нет пользователей",
+            reply_markup=InlineKeyboardBuilder()
+            .add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users"))
+            .as_markup()
+        )
+        await callback.answer()
+        return
+    
+    # Показываем первую страницу
+    page = 0
+    items_per_page = 5
+    
+    await show_users_page(callback.message, page, users)
+
+async def show_users_page(message, page, users):
+    """Показать страницу с пользователями"""
+    items_per_page = 5
+    total_pages = (len(users) + items_per_page - 1) // items_per_page
+    
+    start = page * items_per_page
+    end = start + items_per_page
+    current_users = users[start:end]
+    
+    text = f"👥 **Список пользователей (страница {page + 1}/{total_pages})**\n\n"
+    
+    for user in current_users:
+        reg_date = datetime.fromisoformat(user["registered_at"]).strftime("%d.%m.%Y %H:%M")
+        last_seen = datetime.fromisoformat(user.get("last_seen", user["registered_at"])).strftime("%d.%m.%Y %H:%M")
+        name = user.get("first_name", "Без имени")
+        if user.get("last_name"):
+            name += f" {user['last_name']}"
+        username = f"@{user['username']}" if user.get('username') else "нет username"
+        
+        text += f"👤 **{name}**\n"
+        text += f"  🆔 ID: `{user['user_id']}`\n"
+        text += f"  📱 Username: {username}\n"
+        text += f"  📅 Зарегистрирован: {reg_date}\n"
+        text += f"  🕐 Последний визит: {last_seen}\n\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    if page > 0:
+        keyboard.add(InlineKeyboardButton(text="◀️ Пред", callback_data=f"users_page_{page-1}"))
+    if page < total_pages - 1:
+        keyboard.add(InlineKeyboardButton(text="След ▶️", callback_data=f"users_page_{page+1}"))
+    
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users"))
+    keyboard.adjust(2)
+    
+    await message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("users_page_"))
+async def admin_users_page(callback: CallbackQuery):
+    """Пагинация списка пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    page = int(callback.data.replace("users_page_", ""))
+    users_data = load_users()
+    users = users_data.get("users", [])
+    
+    await show_users_page(callback.message, page, users)
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_users_activity")
+async def admin_users_activity(callback: CallbackQuery):
+    """Статистика активности пользователей"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа!", show_alert=True)
+        return
+    
+    users_data = load_users()
+    users = users_data.get("users", [])
+    
+    from datetime import timedelta
+    now = datetime.now()
+    
+    # Группировка по времени последнего визита
+    today = len([u for u in users if datetime.fromisoformat(u.get("last_seen", u["registered_at"])).date() == now.date()])
+    week = len([u for u in users if (now - datetime.fromisoformat(u.get("last_seen", u["registered_at"]))).days <= 7])
+    month = len([u for u in users if (now - datetime.fromisoformat(u.get("last_seen", u["registered_at"]))).days <= 30])
+    
+    # Активные (с корзиной)
+    active_carts = len(user_carts)
+    
+    text = "📊 **Активность пользователей**\n\n"
+    text += f"**По визитам:**\n"
+    text += f"• Сегодня: {today}\n"
+    text += f"• За неделю: {week}\n"
+    text += f"• За месяц: {month}\n"
+    text += f"• Всего: {len(users)}\n\n"
+    text += f"**По корзинам:**\n"
+    text += f"• Активных корзин: {active_carts}\n"
+    
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_users_activity"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users"))
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard.as_markup(), parse_mode="Markdown")
+    await callback.answer()
     
     # Запускаем бота
     await dp.start_polling(bot)
@@ -2957,3 +3458,4 @@ if __name__ == "__main__":
         logger.info("Бот остановлен")
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
+
