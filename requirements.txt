@@ -1,0 +1,10 @@
+speechrecognition
+pyttsx3
+psutil
+pyautogui
+requests
+beautifulsoup4
+pypiwin32
+comtypes
+pyaudio
+Pillow

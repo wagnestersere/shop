@@ -1,0 +1,35 @@
+{
+    "wake_word": "дэвикс",
+    "assistant_name": "Дэвикс",
+    "voice_enabled": true,
+    "voice_speed": 170,
+    "voice_volume": 0.9,
+    "auto_start": false,
+    "theme": "dark",
+    "city": "Москва",
+    "greetings": [
+        "Слушаю, хозяин!",
+        "Да, я здесь!",
+        "Чем могу помочь?",
+        "Я готов!",
+        "Слушаю внимательно"
+    ],
+    "search_dirs": [
+        "C:\\Program Files",
+        "C:\\Program Files (x86)",
+        "C:\\Users\\%USERNAME%\\AppData\\Local",
+        "C:\\Users\\%USERNAME%\\AppData\\Roaming",
+        "C:\\Games",
+        "D:\\Games"
+    ],
+    "known_paths": {},
+    "system_commands": {
+        "выключи пк": "shutdown /s /t 0",
+        "выключить компьютер": "shutdown /s /t 0",
+        "перезагрузи пк": "shutdown /r /t 0",
+        "перезагрузить компьютер": "shutdown /r /t 0",
+        "спящий режим": "rundll32.exe powrprof.dll,SetSuspendState 0,1,0",
+        "заблокируй": "rundll32.exe user32.dll,LockWorkStation",
+        "заблокировать": "rundll32.exe user32.dll,LockWorkStation"
+    }
+}
